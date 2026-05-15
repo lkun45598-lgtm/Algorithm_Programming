@@ -12,7 +12,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QSpinBox, QComboBox, QLabel, QTextEdit, QGroupBox,
-    QFormLayout, QMessageBox, QFileDialog,
+    QFormLayout, QMessageBox, QFileDialog, QButtonGroup,
 )
 
 from map_view import MapView
@@ -49,14 +49,22 @@ class MainWindow(QMainWindow):
         left = QVBoxLayout()
         modeGroup = QGroupBox("编辑模式")
         mgLayout = QVBoxLayout(modeGroup)
+        self.mode_btn_group = QButtonGroup(self)
+        self.mode_btn_group.setExclusive(True)
+        first_btn = None
         for label, mode in [("障碍 (toggle)", MODE_OBSTACLE),
-                            ("停车场 S", MODE_PARKING),
-                            ("处理厂 T", MODE_PLANT),
-                            ("收集点 P", MODE_POINT),
-                            ("擦除 (右键也可)", MODE_ERASE)]:
+                             ("停车场 S",      MODE_PARKING),
+                             ("处理厂 T",      MODE_PLANT),
+                             ("收集点 P",      MODE_POINT),
+                             ("擦除 (右键也可)", MODE_ERASE)]:
             btn = QPushButton(label)
-            btn.clicked.connect(lambda _, m=mode: self._set_mode(m))
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _checked, m=mode, b=btn: self._set_mode(m, b))
+            self.mode_btn_group.addButton(btn)
             mgLayout.addWidget(btn)
+            if first_btn is None: first_btn = btn
+        # default-check the first mode button so the user sees current state
+        first_btn.setChecked(True)
         left.addWidget(modeGroup)
 
         paramsBox = QGroupBox("参数")
@@ -75,6 +83,7 @@ class MainWindow(QMainWindow):
         left.addWidget(paramsBox)
 
         run_btn = QPushButton("运行求解 + 动画")
+        run_btn.setObjectName("runBtn")
         run_btn.clicked.connect(self._run_and_animate)
         left.addWidget(run_btn)
         clear_btn = QPushButton("清除动画")
@@ -100,9 +109,11 @@ class MainWindow(QMainWindow):
         root.addLayout(right, 2)
         self.map_view.cellClicked.connect(self._on_cell_clicked)
 
-    def _set_mode(self, mode):
+    def _set_mode(self, mode, btn=None):
         self.state.mode = mode
-        self.statusBar().showMessage(f"模式: {mode}")
+        if btn is not None:
+            btn.setChecked(True)
+        self.statusBar().showMessage(f"当前模式: {mode}")
 
     def _on_cell_clicked(self, r, c, btn):
         self.state.apply_click(r, c, btn, weight_input=self.weight_input.value())
@@ -212,8 +223,78 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyleSheet("""
+        QMainWindow, QWidget {
+            background: #f5f6fa;
+            font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            font-size: 10pt;
+            color: #2c2c2c;
+        }
+        QGroupBox {
+            border: 1px solid #d0d4dc;
+            border-radius: 8px;
+            margin-top: 12px;
+            padding: 12px 8px 8px 8px;
+            font-weight: 600;
+            background: #ffffff;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 6px;
+            color: #4a5468;
+        }
+        QPushButton {
+            background: #ffffff;
+            border: 1px solid #c8cdd6;
+            border-radius: 6px;
+            padding: 6px 12px;
+            min-height: 18px;
+        }
+        QPushButton:hover {
+            background: #eaf1fb;
+            border-color: #6c93d9;
+        }
+        QPushButton:pressed {
+            background: #d6e4f7;
+        }
+        QPushButton:checked {
+            background: #3b7ddd;
+            color: white;
+            border-color: #2c66c0;
+            font-weight: 600;
+        }
+        QPushButton#runBtn {
+            background: #28a745;
+            color: white;
+            border-color: #208a39;
+            font-weight: 600;
+            min-height: 28px;
+        }
+        QPushButton#runBtn:hover { background: #2db84f; }
+        QPushButton#runBtn:pressed { background: #1e8035; }
+        QSpinBox, QComboBox {
+            background: #fff;
+            border: 1px solid #c8cdd6;
+            border-radius: 4px;
+            padding: 3px 6px;
+            min-height: 22px;
+        }
+        QComboBox::drop-down { border: none; }
+        QTextEdit {
+            background: #1e1e2e;
+            color: #e4e6eb;
+            border: 1px solid #2c2f3a;
+            border-radius: 6px;
+            font-family: 'Consolas', 'JetBrains Mono', 'Courier New', monospace;
+            font-size: 9.5pt;
+            padding: 8px;
+        }
+        QLabel { color: #2c2c2c; }
+        QStatusBar { background: #ececf2; color: #555; }
+    """)
     win = MainWindow()
-    win.resize(1100, 720)
+    win.resize(1180, 760)
     win.show()
     sys.exit(app.exec())
 

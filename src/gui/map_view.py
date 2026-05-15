@@ -1,9 +1,10 @@
 """map_view.py —— QGraphicsView 网格地图视图"""
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF
-from PyQt6.QtGui import QBrush, QColor, QFont, QPen, QPainterPath
+from PyQt6.QtGui import QBrush, QColor, QFont, QPen, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
     QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
-    QGraphicsSimpleTextItem, QGraphicsPathItem, QGraphicsEllipseItem,
+    QGraphicsSimpleTextItem, QGraphicsEllipseItem, QGraphicsPathItem,
+    QGraphicsDropShadowEffect,
 )
 
 CELL = 36     # 每格像素数
@@ -19,7 +20,12 @@ class MapView(QGraphicsView):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
-        self.setRenderHints(self.renderHints())
+        self.setRenderHints(
+            QPainter.RenderHint.Antialiasing
+            | QPainter.RenderHint.SmoothPixmapTransform
+            | QPainter.RenderHint.TextAntialiasing
+        )
+        self.setBackgroundBrush(QBrush(QColor("#f5f6fa")))
         self.rows = 10
         self.cols = 10
         self.cells = [["." for _ in range(self.cols)] for _ in range(self.rows)]
@@ -44,11 +50,11 @@ class MapView(QGraphicsView):
         for r in range(self.rows):
             for c in range(self.cols):
                 rect = QGraphicsRectItem(c * CELL, r * CELL, CELL, CELL)
-                rect.setPen(QPen(QColor(200, 200, 200)))
+                rect.setPen(QPen(QColor(220, 224, 230)))
                 if self.cells[r][c] == '#':
-                    rect.setBrush(QBrush(QColor(80, 80, 80)))
+                    rect.setBrush(QBrush(QColor(70, 78, 95)))
                 else:
-                    rect.setBrush(QBrush(QColor(250, 250, 250)))
+                    rect.setBrush(QBrush(QColor(255, 255, 255)))
                 self._scene.addItem(rect)
         # 关键点
         if self.parking is not None:
@@ -62,19 +68,28 @@ class MapView(QGraphicsView):
 
     def _paint_marker(self, p, color, label):
         r, c = p
-        item = QGraphicsRectItem(c * CELL + 3, r * CELL + 3, CELL - 6, CELL - 6)
+        path = QPainterPath()
+        path.addRoundedRect(c*CELL+4, r*CELL+4, CELL-8, CELL-8, 8, 8)
+        item = QGraphicsPathItem(path)
         item.setBrush(QBrush(color))
-        item.setPen(QPen(QColor(0, 0, 0)))
+        pen = QPen(color.darker(130))
+        pen.setWidthF(1.2)
+        item.setPen(pen)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(10)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(0, 0, 0, 70))
+        item.setGraphicsEffect(shadow)
         self._scene.addItem(item)
         txt = QGraphicsSimpleTextItem(label)
         f = QFont()
-        f.setPointSize(10)
+        f.setPointSize(9)
         f.setBold(True)
         txt.setFont(f)
         txt.setBrush(QBrush(QColor(255, 255, 255)))
         br = txt.boundingRect()
-        txt.setPos(c * CELL + (CELL - br.width()) / 2,
-                   r * CELL + (CELL - br.height()) / 2)
+        txt.setPos(c*CELL + (CELL - br.width())/2, r*CELL + (CELL - br.height())/2)
+        txt.setZValue(2)
         self._scene.addItem(txt)
 
     def mousePressEvent(self, ev):
@@ -92,13 +107,19 @@ class MapView(QGraphicsView):
         if not path:
             return
         qp = QPainterPath()
-        qp.moveTo(path[0][1] * CELL + CELL / 2, path[0][0] * CELL + CELL / 2)
+        qp.moveTo(path[0][1]*CELL+CELL/2, path[0][0]*CELL+CELL/2)
         for (r, c) in path[1:]:
-            qp.lineTo(c * CELL + CELL / 2, r * CELL + CELL / 2)
+            qp.lineTo(c*CELL+CELL/2, r*CELL+CELL/2)
         item = QGraphicsPathItem(qp)
-        pen = QPen(color)
-        pen.setWidth(3)
+        # semi-transparent pen so overlapping trip paths are visible
+        pen_color = QColor(color)
+        pen_color.setAlpha(180)
+        pen = QPen(pen_color)
+        pen.setWidthF(3.5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         item.setPen(pen)
+        item.setZValue(1)
         self._scene.addItem(item)
         self._trip_overlays.append(item)
 
@@ -114,10 +135,16 @@ class MapView(QGraphicsView):
         if color is None:
             color = QColor(255, 180, 0)
         if self._car_item is None:
-            self._car_item = QGraphicsEllipseItem(0, 0, CELL * 0.5, CELL * 0.5)
-            self._car_item.setBrush(QBrush(color))
-            self._car_item.setPen(QPen(QColor(0, 0, 0), 2))
+            self._car_item = QGraphicsEllipseItem(0, 0, CELL*0.55, CELL*0.55)
+            outline = QPen(QColor(40, 40, 40))
+            outline.setWidthF(1.6)
+            self._car_item.setPen(outline)
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(12)
+            shadow.setOffset(0, 2)
+            shadow.setColor(QColor(0, 0, 0, 120))
+            self._car_item.setGraphicsEffect(shadow)
             self._car_item.setZValue(10)
             self._scene.addItem(self._car_item)
         self._car_item.setBrush(QBrush(color))
-        self._car_item.setPos(c * CELL + CELL * 0.25, r * CELL + CELL * 0.25)
+        self._car_item.setPos(c*CELL + CELL*0.225, r*CELL + CELL*0.225)

@@ -25,3 +25,9 @@ Thumbs.db
 # 临时
 /tmp/
 *.tmp
+
+# Typst/LaTeX 编译副产物
+*.aux
+*.log
+*.out
+*.toc
