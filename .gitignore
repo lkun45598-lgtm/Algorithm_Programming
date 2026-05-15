@@ -1,0 +1,27 @@
+# 编译产物
+build/
+*.exe
+*.o
+*.obj
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Word 临时锁文件
+~$*.doc
+~$*.docx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时
+/tmp/
+*.tmp
