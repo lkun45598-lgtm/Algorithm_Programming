@@ -13,20 +13,36 @@ namespace gc {
 
 namespace {
 
-// 从全局 KeyPoints 中按 mask 抽取子集,组成子问题的 KeyPoints.
-// 注意: 子问题的收集点编号会被重新映射(子内部 0..popcount(mask)-1).
-KeyPoints sub_keypoints(const KeyPoints& kp, int mask) {
-    KeyPoints sk;
-    sk.parking = kp.parking;
-    sk.plant   = kp.plant;
-    sk.wMax    = kp.wMax;
+struct SubProblem {
+    KeyPoints kp;
+    std::vector<int> localToGlobal;   // 子问题点编号 -> 原始全局点编号
+};
+
+// 从全局 KeyPoints 中按 mask 抽取子集。子求解器内部会重新编号，
+// 因此必须保留 localToGlobal 映射，输出前再把 POINTS 还原为原始编号。
+SubProblem sub_problem(const KeyPoints& kp, int mask) {
+    SubProblem sp;
+    sp.kp.parking = kp.parking;
+    sp.kp.plant   = kp.plant;
+    sp.kp.wMax    = kp.wMax;
     for (int i = 0; i < kp.N(); ++i) {
         if (mask & (1 << i)) {
-            sk.collects.push_back(kp.collects[i]);
-            sk.weights .push_back(kp.weights[i]);
+            sp.kp.collects.push_back(kp.collects[i]);
+            sp.kp.weights .push_back(kp.weights[i]);
+            sp.localToGlobal.push_back(i);
         }
     }
-    return sk;
+    return sp;
+}
+
+void remap_trip_indices(Solution& s, const std::vector<int>& localToGlobal) {
+    for (Trip& tr : s.trips) {
+        for (int& idx : tr.pointIndices) {
+            if (0 <= idx && idx < static_cast<int>(localToGlobal.size())) {
+                idx = localToGlobal[idx];
+            }
+        }
+    }
 }
 
 } // anon
@@ -60,16 +76,17 @@ Solution solve_dual(const Grid& g, const KeyPoints& kp,
     // 枚举 mask1, mask2 = full ^ mask1. 允许空划分(一辆车不动 == 退化为单车).
     for (int mask1 = 0; mask1 <= full; ++mask1) {
         int mask2 = full ^ mask1;
-        auto sk1 = sub_keypoints(kp, mask1);
-        auto sk2 = sub_keypoints(kp, mask2);
+        auto sp1 = sub_problem(kp, mask1);
+        auto sp2 = sub_problem(kp, mask2);
 
         // 子问题如果 sum(w) <= W_max 是允许的(单 trip 一次解决);
-        // 而单车 solver 中只在父问题校验 sum>Wmax,子问题用 solve_dp/greedy 都能正确处理.
-        // 但: solve_dp 的划分 DP 在 sum<=Wmax 时也能直接给出 firstCost[full] 单 trip 解.
-        Solution s1 = runSub(sk1);
+        // 单车 solver 可自然退化为一次首程。
+        Solution s1 = runSub(sp1.kp);
         if (!s1.ok) continue;
-        Solution s2 = runSub(sk2);
+        remap_trip_indices(s1, sp1.localToGlobal);
+        Solution s2 = runSub(sp2.kp);
         if (!s2.ok) continue;
+        remap_trip_indices(s2, sp2.localToGlobal);
         int total = s1.totalDistance + s2.totalDistance;
         if (total < bestTotal) {
             bestTotal = total; bestS1 = s1; bestS2 = s2;

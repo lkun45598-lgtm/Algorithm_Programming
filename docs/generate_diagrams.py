@@ -1,11 +1,11 @@
-"""generate_diagrams.py —— 用 matplotlib 画报告里的系统/算法流程图。
-   输出位置: docs/figures/
+"""generate_diagrams.py —— 用 matplotlib 绘制学术风格流程图。
+   设计原则: 配色克制 / 圆角阴影 / Bezier 曲线箭头 / 网格对齐 / 字号层次清晰。
 """
 import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
-from matplotlib.lines import Line2D
+from matplotlib.patheffects import withStroke
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "figures")
@@ -13,307 +13,393 @@ os.makedirs(OUT, exist_ok=True)
 
 plt.rcParams["font.family"] = ["Microsoft YaHei", "SimHei", "sans-serif"]
 plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["font.size"] = 10
 
-# 颜色规范
-C_BG = "#fafbfc"
-C_BORDER = "#3c4659"
-C_NODE_PRIMARY = "#dae8fc"        # 浅蓝
-C_NODE_PRIMARY_BD = "#3b7ddd"
-C_NODE_DATA = "#fff2cc"           # 浅黄
-C_NODE_DATA_BD = "#d6a948"
-C_NODE_ALGO = "#d5e8d4"           # 浅绿
-C_NODE_ALGO_BD = "#82b366"
-C_NODE_IO = "#e1d5e7"             # 浅紫
-C_NODE_IO_BD = "#9673a6"
-C_ARROW = "#3c4659"
+# ===== 设计语言 (Material/Notion 风) =====
+BG = "white"
+INK = "#1f2937"           # 主文字
+INK_MUTED = "#6b7280"     # 次文字
+LINE = "#9ca3af"          # 线条
+
+# 节点配色族 (背景 + 边)
+PALETTE = {
+    "primary":  ("#dbeafe", "#3b82f6"),  # 蓝 — C++ 后端
+    "secondary":("#ede9fe", "#8b5cf6"),  # 紫 — Python 前端
+    "accent":   ("#dcfce7", "#22c55e"),  # 绿 — 算法
+    "warn":     ("#fef3c7", "#f59e0b"),  # 黄 — 数据
+    "danger":   ("#fee2e2", "#ef4444"),  # 红
+    "neutral":  ("#f3f4f6", "#9ca3af"),  # 灰 — 协议
+}
 
 
-def styled_box(ax, x, y, w, h, text, face, edge, fontsize=10, fontweight="normal"):
+def node(ax, x, y, w, h, label, kind="primary", title=None,
+         fontsize=9.5, weight="normal"):
+    """画一个圆角矩形节点,带轻阴影。"""
+    face, edge = PALETTE[kind]
+    # 阴影层
+    shadow = FancyBboxPatch(
+        (x - w/2 + 0.04, y - h/2 - 0.04), w, h,
+        boxstyle="round,pad=0.0,rounding_size=0.14",
+        facecolor="#0008", edgecolor="none", alpha=0.10,
+    )
+    ax.add_patch(shadow)
+    # 主体
     box = FancyBboxPatch(
         (x - w/2, y - h/2), w, h,
-        boxstyle="round,pad=0.02,rounding_size=0.10",
-        facecolor=face, edgecolor=edge, linewidth=1.4
+        boxstyle="round,pad=0.0,rounding_size=0.14",
+        facecolor=face, edgecolor=edge, linewidth=1.3,
     )
     ax.add_patch(box)
-    ax.text(x, y, text, ha="center", va="center",
-            fontsize=fontsize, fontweight=fontweight, color="#1f2530")
+    if title is not None:
+        ax.text(x, y + h*0.18, title, ha="center", va="center",
+                fontsize=fontsize+0.5, color=INK, fontweight="bold")
+        ax.text(x, y - h*0.20, label, ha="center", va="center",
+                fontsize=fontsize-0.5, color=INK_MUTED)
+    else:
+        ax.text(x, y, label, ha="center", va="center",
+                fontsize=fontsize, color=INK, fontweight=weight)
 
 
-def arrow(ax, x1, y1, x2, y2, label="", style="-|>", color=C_ARROW, lw=1.4, mutation=14, curve=0.0):
+def arrow(ax, x1, y1, x2, y2, label=None, curve=0.0,
+          color=None, lw=1.4, ls="-", mutation=14):
+    if color is None:
+        color = "#4b5563"
     ar = FancyArrowPatch(
         (x1, y1), (x2, y2),
-        arrowstyle=style, mutation_scale=mutation,
-        color=color, linewidth=lw,
+        arrowstyle="-|>", mutation_scale=mutation,
+        color=color, linewidth=lw, linestyle=ls,
         connectionstyle=f"arc3,rad={curve}",
+        capstyle="round",
     )
     ax.add_patch(ar)
     if label:
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        ax.text(mx, my + 0.12, label, ha="center", va="center",
-                fontsize=8, color="#4a5468",
-                bbox=dict(facecolor="white", edgecolor="none", pad=1.5))
+        mx, my = (x1 + x2)/2, (y1 + y2)/2
+        offset = 0.12 * (1 + abs(curve))
+        ax.text(mx, my + offset, label, ha="center", va="center",
+                fontsize=8, color=INK_MUTED,
+                bbox=dict(facecolor="white", edgecolor="none", pad=2))
+
+
+def group_frame(ax, x, y, w, h, title, color):
+    """画一个虚线分组框 + 左上标签。"""
+    frame = FancyBboxPatch(
+        (x, y), w, h,
+        boxstyle="round,pad=0.0,rounding_size=0.10",
+        facecolor="none", edgecolor=color, linewidth=0.9,
+        linestyle=(0, (5, 4)), alpha=0.7,
+    )
+    ax.add_patch(frame)
+    tag = ax.text(x + 0.2, y + h - 0.05, title,
+                  fontsize=9.5, color=color, fontweight="bold",
+                  bbox=dict(facecolor="white", edgecolor="none", pad=2))
+
+
+def caption(ax, text):
+    """在图底加副标题"""
+    ax.text(0.5, 0.02, text, transform=ax.transAxes,
+            ha="center", va="bottom", fontsize=8.5,
+            color=INK_MUTED, fontstyle="italic")
 
 
 # ===================================================================
-# 图 1: 系统架构图 (前端 / 通信协议 / 后端三层)
+# 图 1: 系统架构图
 # ===================================================================
-def fig_system_architecture(out_path):
-    fig, ax = plt.subplots(figsize=(12, 7.2), dpi=160)
-    ax.set_xlim(0, 12); ax.set_ylim(0, 8); ax.set_aspect("equal"); ax.axis("off")
-    fig.patch.set_facecolor("white")
+def fig_architecture(path):
+    fig, ax = plt.subplots(figsize=(11.5, 7), dpi=180)
+    ax.set_xlim(0, 11.5); ax.set_ylim(0, 7); ax.set_aspect("equal"); ax.axis("off")
+    fig.patch.set_facecolor(BG)
 
-    # === 上层:PyQt6 前端 ===
-    ax.text(6, 7.6, "PyQt6 前端 (src/gui/)", ha="center", fontsize=11.5,
-            fontweight="bold", color="#2c4096")
-    front_y = 6.6
-    for i, (x, name) in enumerate([
-        (1.8, "main.py\n主窗口装配"),
-        (4.0, "map_view.py\n网格视图 (QGraphicsView)"),
-        (6.4, "editor.py\n编辑状态管理"),
-        (8.8, "animator.py\nQVariantAnimation 补间"),
-        (11.0, "controller.py\nsolver 调用与解析"),
-    ]):
-        styled_box(ax, x, front_y, 2.0, 0.9, name, C_NODE_IO, C_NODE_IO_BD, fontsize=8.5)
+    # ===== 前端组框 =====
+    group_frame(ax, 0.5, 5.0, 10.5, 1.6, "PyQt6 前端  src/gui/", PALETTE["secondary"][1])
 
-    # 前端框
-    front_frame = FancyBboxPatch((0.6, 6.0), 10.8, 1.4,
-                                  boxstyle="round,pad=0.04,rounding_size=0.12",
-                                  facecolor="none", edgecolor=C_NODE_IO_BD,
-                                  linewidth=1.0, linestyle="--", alpha=0.55)
-    ax.add_patch(front_frame)
+    front_nodes = [
+        (1.7, 5.7, "main.py",      "主窗口装配"),
+        (3.7, 5.7, "map_view.py",  "QGraphicsView"),
+        (5.7, 5.7, "editor.py",    "编辑状态"),
+        (7.7, 5.7, "animator.py",  "补间动画"),
+        (9.8, 5.7, "controller.py","调用 solver.exe"),
+    ]
+    for (x, y, title, sub) in front_nodes:
+        node(ax, x, y, 1.7, 0.95, sub, kind="secondary", title=title, fontsize=9)
 
-    # === 中层:协议层 ===
-    proto_y = 4.6
-    styled_box(ax, 6, proto_y, 9.4, 0.7, "行式文本协议: 输入文件 + STDOUT (STATUS/ALGORITHM/TRIPS/PATH/...)",
-               "#f4f5f7", "#7c8597", fontsize=9.5, fontweight="bold")
+    # ===== 协议层 =====
+    node(ax, 5.75, 4.0, 9.5, 0.7,
+         "行式文本协议:STATUS / ALGORITHM / TOTAL_DISTANCE / TRIPS / PATH / END",
+         kind="neutral", fontsize=9.5, weight="bold")
 
-    # === 下层:C++ 后端 ===
-    ax.text(6, 3.6, "C++ 算法核心 (src/cpp/)", ha="center", fontsize=11.5,
-            fontweight="bold", color="#2c8a3a")
-    back_y_top = 2.7
-    back_y_bot = 1.4
+    # ===== 后端组框 =====
+    group_frame(ax, 0.5, 0.5, 10.5, 3.0, "C++ 后端  src/cpp/", PALETTE["primary"][1])
 
-    for x, name in [
-        (1.5, "io_utils\n解析/输出"),
-        (3.7, "feasibility\ncheck_feasibility()"),
-        (6.0, "grid\nBFS / 最短路径"),
-        (8.3, "solver_common\nDistanceMatrix"),
-        (10.7, "main\n入口与分派"),
-    ]:
-        styled_box(ax, x, back_y_top, 2.0, 0.85, name, C_NODE_PRIMARY, C_NODE_PRIMARY_BD, fontsize=8.5)
+    # 后端上排:输入/输出/基础设施
+    upper = [
+        (1.8, 2.5, "io_utils", "I/O 协议", "primary"),
+        (4.0, 2.5, "feasibility", "合法性检查", "primary"),
+        (6.2, 2.5, "grid", "BFS 最短路", "primary"),
+        (8.4, 2.5, "solver_common", "距离矩阵 K×K", "primary"),
+        (10.2, 2.5, "main", "命令分派", "primary"),
+    ]
+    for (x, y, title, sub, k) in upper:
+        node(ax, x, y, 1.6, 0.95, sub, kind=k, title=title, fontsize=8.8)
 
-    for x, name in [
-        (2.5, "dp.cpp\n标准 / 分治"),
-        (5.2, "greedy.cpp\n最近邻启发式"),
-        (7.9, "dual.cpp\n双车协同"),
-    ]:
-        styled_box(ax, x, back_y_bot, 2.2, 0.85, name, C_NODE_ALGO, C_NODE_ALGO_BD, fontsize=8.5)
+    # 后端下排:算法核心
+    lower = [
+        (3.2, 1.15, "dp.cpp", "DP + 分治"),
+        (5.7, 1.15, "greedy.cpp", "最近邻"),
+        (8.2, 1.15, "dual.cpp", "双车协同"),
+    ]
+    for (x, y, title, sub) in lower:
+        node(ax, x, y, 2.0, 0.95, sub, kind="accent", title=title, fontsize=8.8)
 
-    # 后端框
-    back_frame = FancyBboxPatch((0.4, 0.85), 11.2, 2.6,
-                                 boxstyle="round,pad=0.04,rounding_size=0.12",
-                                 facecolor="none", edgecolor=C_NODE_PRIMARY_BD,
-                                 linewidth=1.0, linestyle="--", alpha=0.55)
-    ax.add_patch(back_frame)
+    # ===== 主流向箭头 =====
+    arrow(ax, 9.8, 5.20, 9.0, 4.35, label="stdin/stdout", curve=-0.18,
+          color=PALETTE["secondary"][1], lw=1.8, mutation=16)
+    arrow(ax, 2.5, 3.65, 1.9, 3.05, curve=0.15,
+          color=PALETTE["primary"][1], lw=1.8, mutation=16)
 
-    # 流向箭头: 前端→协议→后端
-    arrow(ax, 11.0, 6.1, 8.0, 4.95, style="-|>", color=C_NODE_IO_BD, lw=1.6)
-    arrow(ax, 4.0, 4.25, 1.5, 3.15, style="-|>", color=C_NODE_PRIMARY_BD, lw=1.6)
-    arrow(ax, 1.5, 2.25, 1.5, 1.8, style="-|>", color="#7c8597", lw=1.2)
+    # 后端基础设施 → 算法层
+    for x in [3.2, 5.7, 8.2]:
+        arrow(ax, x, 1.85, x, 1.65, color=LINE, lw=1.0, mutation=10)
 
-    ax.text(9.7, 5.4, "stdin/stdout", ha="center", fontsize=8, color="#4a5468",
-            bbox=dict(facecolor="white", edgecolor="none"))
-    ax.text(2.6, 3.7, "parse + dispatch", ha="center", fontsize=8, color="#4a5468",
-            bbox=dict(facecolor="white", edgecolor="none"))
-
-    # 标题
-    ax.text(6, 0.3, "图: 系统两层架构与通信协议",
-            ha="center", fontsize=9.5, fontstyle="italic", color="#4a5468")
+    caption(ax, "图 1 — 系统两层架构:PyQt6 前端 (上) ↔ 行式协议 (中) ↔ C++ 后端 (下)")
 
     fig.tight_layout()
-    fig.savefig(out_path, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=BG, pad_inches=0.15)
     plt.close(fig)
-    print("saved", out_path)
+    print("saved", path)
 
 
 # ===================================================================
-# 图 2: 算法 pipeline (端到端处理流程)
+# 图 2: 算法 pipeline
 # ===================================================================
-def fig_algorithm_pipeline(out_path):
-    fig, ax = plt.subplots(figsize=(13, 4.2), dpi=160)
-    ax.set_xlim(0, 13); ax.set_ylim(0, 4); ax.set_aspect("equal"); ax.axis("off")
+def fig_pipeline(path):
+    fig, ax = plt.subplots(figsize=(13, 4.8), dpi=180)
+    ax.set_xlim(0, 13); ax.set_ylim(0, 5); ax.set_aspect("equal"); ax.axis("off")
+    fig.patch.set_facecolor(BG)
 
-    # 输入 → 解析 → 校验 → 距离矩阵 → 算法分派 → 输出
-    nodes = [
-        (1.0, 2.0, "输入\nfile/stdin", C_NODE_IO, C_NODE_IO_BD),
-        (2.9, 2.0, "io_utils\nparse_input", C_NODE_PRIMARY, C_NODE_PRIMARY_BD),
-        (4.8, 2.0, "check_\nfeasibility", C_NODE_PRIMARY, C_NODE_PRIMARY_BD),
-        (6.7, 2.0, "build_distance_\nmatrix (BFS×K)", C_NODE_PRIMARY, C_NODE_PRIMARY_BD),
+    # 主流: input → parse → check → distMat → ALGO → emit
+    main = [
+        (1.0, 2.5, "INPUT",      "file / stdin",       "warn"),
+        (3.0, 2.5, "parse_input","io_utils",           "primary"),
+        (5.0, 2.5, "check_feasibility","feasibility",  "primary"),
+        (7.0, 2.5, "build_dist_matrix","K×K BFS",      "primary"),
     ]
-    for x, y, name, face, edge in nodes:
-        styled_box(ax, x, y, 1.6, 0.95, name, face, edge, fontsize=8.5)
+    for (x, y, title, sub, k) in main:
+        node(ax, x, y, 1.7, 1.0, sub, kind=k, title=title, fontsize=9)
 
-    # 算法分派(竖向 5 个分支)
-    algo_x = 9.0
-    for i, (name, _color, edge) in enumerate([
-        ("solve_dp\n(标准)", C_NODE_ALGO, C_NODE_ALGO_BD),
-        ("solve_dp\n(分治)", C_NODE_ALGO, C_NODE_ALGO_BD),
-        ("solve_greedy", C_NODE_ALGO, C_NODE_ALGO_BD),
-        ("solve_dual\n(DP backend)", C_NODE_ALGO, C_NODE_ALGO_BD),
-        ("solve_dual\n(Greedy backend)", C_NODE_ALGO, C_NODE_ALGO_BD),
-    ]):
-        y = 3.5 - i * 0.7
-        styled_box(ax, algo_x, y, 1.65, 0.55, name, _color, edge, fontsize=7.5)
-        arrow(ax, 7.6, 2.0, algo_x - 0.85, y, style="-|>", color="#7c8597", lw=1.1, mutation=10)
+    # 5 个算法分支
+    algos = [
+        (3.6, "dp",           "标准枚举",  "accent"),
+        (3.0, "dp_dc",        "分治枚举",  "accent"),
+        (2.4, "greedy",       "最近邻",   "accent"),
+        (1.8, "multi_dp",     "双车 DP",   "accent"),
+        (1.2, "multi_greedy", "双车贪心",  "accent"),
+    ]
+    algo_x = 9.5
+    for (y, title, sub, k) in algos:
+        node(ax, algo_x, y, 1.6, 0.55, sub, kind=k, title=title, fontsize=8.2)
+        arrow(ax, 7.85, 2.5, algo_x - 0.8, y,
+              color=LINE, lw=1.0, mutation=10, curve=0.0)
 
-    # 汇聚到 emit_solution
-    emit_x = 11.4
-    styled_box(ax, emit_x, 2.0, 1.6, 0.95, "emit_solution\n→ stdout", C_NODE_PRIMARY, C_NODE_PRIMARY_BD, fontsize=8.5)
-    for i in range(5):
-        y = 3.5 - i * 0.7
-        arrow(ax, algo_x + 0.85, y, emit_x - 0.85, 2.0, style="-|>", color="#7c8597", lw=1.1, mutation=10)
+    # emit_solution
+    node(ax, 11.7, 2.5, 1.5, 1.0, "stdout",
+         kind="warn", title="emit_solution", fontsize=9)
+
+    for y, _, _, _ in algos:
+        arrow(ax, algo_x + 0.8, y, 11.7 - 0.75, 2.5,
+              color=LINE, lw=1.0, mutation=10, curve=0.0)
 
     # 主线箭头
-    for x in [1.0, 2.9, 4.8, 6.7]:
-        arrow(ax, x + 0.85, 2.0, x + 1.9 - 0.85, 2.0, style="-|>", color=C_ARROW, lw=1.5, mutation=14)
+    for x in [1.0, 3.0, 5.0]:
+        arrow(ax, x + 0.85, 2.5, x + 2 - 0.85, 2.5,
+              color=PALETTE["primary"][1], lw=1.8, mutation=16)
+    # 第 4 段
+    arrow(ax, 7.85, 2.5, 8.45, 2.5,
+          color=PALETTE["primary"][1], lw=1.8, mutation=16)
 
-    # 标题
-    ax.text(6.5, 0.4, "图: 算法端到端 pipeline,算法分派由输入文件最后一行 ALGO 字段触发",
-            ha="center", fontsize=9, fontstyle="italic", color="#4a5468")
+    # 算法分派标签
+    ax.text(8.7, 4.2, "由 ALGO 字段分派", fontsize=9, color=INK_MUTED,
+            bbox=dict(facecolor="#fafbfc", edgecolor=LINE, pad=4, boxstyle="round,pad=0.3"))
+
+    caption(ax, "图 2 — 算法端到端 pipeline,算法分派由输入文件最末行 ALGO 字段决定")
 
     fig.tight_layout()
-    fig.savefig(out_path, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=BG, pad_inches=0.15)
     plt.close(fig)
-    print("saved", out_path)
+    print("saved", path)
 
 
 # ===================================================================
-# 图 3: DP 双层流程 (子集 TSP 内层 + 划分 DP 外层 + 回溯)
+# 图 3: DP 双层流程
 # ===================================================================
-def fig_dp_pipeline(out_path):
-    fig, ax = plt.subplots(figsize=(12, 7), dpi=160)
-    ax.set_xlim(0, 12); ax.set_ylim(0, 7); ax.set_aspect("equal"); ax.axis("off")
+def fig_dp_flow(path):
+    fig, ax = plt.subplots(figsize=(11.5, 7.5), dpi=180)
+    ax.set_xlim(0, 11.5); ax.set_ylim(0, 7.5); ax.set_aspect("equal"); ax.axis("off")
+    fig.patch.set_facecolor(BG)
 
-    # 输入
-    styled_box(ax, 1.0, 5.7, 1.6, 0.7, "DistanceMatrix\n+ KeyPoints", C_NODE_DATA, C_NODE_DATA_BD, fontsize=8.5)
+    # ====== 输入数据 ======
+    node(ax, 1.3, 6.2, 1.9, 0.8,
+         "DistanceMatrix D[K×K]\nKeyPoints",
+         kind="warn", fontsize=8.5)
 
-    # 内层 TSP DP
-    styled_box(ax, 3.5, 5.7, 1.8, 0.7, "tsp_from_depot\n(IDX_S)", C_NODE_ALGO, C_NODE_ALGO_BD, fontsize=8.5)
-    styled_box(ax, 6.0, 5.7, 1.8, 0.7, "tsp_from_depot\n(IDX_T)", C_NODE_ALGO, C_NODE_ALGO_BD, fontsize=8.5)
-    styled_box(ax, 3.5, 4.6, 1.8, 0.7, "firstCost[Q]\n(S→Q→T)", C_NODE_DATA, C_NODE_DATA_BD, fontsize=8.5)
-    styled_box(ax, 6.0, 4.6, 1.8, 0.7, "laterCost[Q]\n(T→Q→T)", C_NODE_DATA, C_NODE_DATA_BD, fontsize=8.5)
-    styled_box(ax, 9.2, 5.15, 1.8, 1.3, "对所有不合\n法 mask 置 INF\n(载重 > Wmax)", C_NODE_PRIMARY, C_NODE_PRIMARY_BD, fontsize=8)
+    # ====== 内层组框 ======
+    group_frame(ax, 2.7, 4.6, 7.5, 2.0, "内层:子集 TSP DP   O(2ⁿ·n²)", PALETTE["accent"][1])
 
-    # 外层 划分 DP
-    styled_box(ax, 4.6, 3.0, 4.2, 0.95, "划分 DP: G[mask] = min_{Q⊆mask} laterCost[Q] + G[mask⊕Q]", C_NODE_ALGO, C_NODE_ALGO_BD, fontsize=9, fontweight="bold")
-    styled_box(ax, 4.6, 1.8, 4.2, 0.7, "顶层: Total = min_{Q₁} firstCost[Q₁] + G[full⊕Q₁]", C_NODE_PRIMARY, C_NODE_PRIMARY_BD, fontsize=9)
+    # tspS 和 tspT
+    node(ax, 3.7, 5.85, 1.7, 0.7,
+         "depot = S", kind="accent", title="tsp_S[mask][i]", fontsize=8.5)
+    node(ax, 6.3, 5.85, 1.7, 0.7,
+         "depot = T", kind="accent", title="tsp_T[mask][i]", fontsize=8.5)
+    # firstCost laterCost
+    node(ax, 3.7, 4.95, 1.7, 0.7,
+         "S → Q → T", kind="warn", title="firstCost[Q]", fontsize=8.5)
+    node(ax, 6.3, 4.95, 1.7, 0.7,
+         "T → Q → T", kind="warn", title="laterCost[Q]", fontsize=8.5)
+
+    # 容量约束注入
+    node(ax, 9.0, 5.4, 1.6, 1.2,
+         "w(mask) > W_max\n→ cost := +∞", kind="danger", title="容量过滤", fontsize=8)
+
+    # ====== 外层组框 ======
+    group_frame(ax, 1.0, 2.0, 9.5, 2.0, "外层:划分 DP   O(3ⁿ)", PALETTE["primary"][1])
+
+    # 划分 DP 主公式节点
+    node(ax, 4.0, 3.2, 5.5, 0.8,
+         "G[mask] = min{laterCost[Q] + G[mask⊕Q]}",
+         kind="primary", fontsize=9.5, weight="bold")
+    node(ax, 4.0, 2.35, 5.5, 0.6,
+         "Total = min{firstCost[Q₁] + G[full⊕Q₁]}",
+         kind="primary", fontsize=9.5, weight="bold")
 
     # 回溯
-    styled_box(ax, 9.5, 1.8, 2.2, 0.7, "回溯 pick[mask]\n+ recover_order", C_NODE_IO, C_NODE_IO_BD, fontsize=8.5)
-    styled_box(ax, 9.5, 0.7, 2.2, 0.7, "Solution.trips", C_NODE_DATA, C_NODE_DATA_BD, fontsize=8.5)
+    node(ax, 9.2, 3.2, 1.8, 0.8,
+         "trips 序列\n+ POINTS\n+ PATH", kind="secondary", title="回溯", fontsize=8.5)
 
-    # 箭头
-    arrow(ax, 1.85, 5.7, 2.6, 5.7); arrow(ax, 4.4, 5.7, 5.1, 5.7)
-    arrow(ax, 3.5, 5.3, 3.5, 4.95)
-    arrow(ax, 6.0, 5.3, 6.0, 4.95)
-    arrow(ax, 6.9, 5.7, 8.3, 5.5, curve=0.05)
-    arrow(ax, 4.4, 4.6, 4.4, 3.48)
-    arrow(ax, 6.9, 4.6, 5.8, 3.48)
-    arrow(ax, 9.2, 4.5, 6.7, 3.48, color="#7c8597", lw=1.0)
-    arrow(ax, 4.6, 2.52, 4.6, 2.15)
-    arrow(ax, 6.7, 1.8, 8.4, 1.8)
-    arrow(ax, 9.5, 1.45, 9.5, 1.05)
+    # ====== 箭头 ======
+    arrow(ax, 2.25, 6.2, 2.85, 5.95, color=PALETTE["warn"][1])
+    arrow(ax, 2.25, 6.2, 5.45, 5.95, color=PALETTE["warn"][1], curve=-0.10)
 
-    # 区域标签
-    ax.text(5.0, 6.45, "内层: 子集 TSP DP   O(2ⁿ·n²)", ha="center", fontsize=9.5,
-            color="#2c8a3a", fontweight="bold")
-    ax.text(4.6, 3.65, "外层: 划分 DP   O(3ⁿ)", ha="center", fontsize=9.5,
-            color="#2c8a3a", fontweight="bold")
-    ax.text(9.5, 2.45, "结果回溯", ha="center", fontsize=9.5,
-            color="#9673a6", fontweight="bold")
+    arrow(ax, 3.7, 5.50, 3.7, 5.30)   # tspS -> firstCost
+    arrow(ax, 6.3, 5.50, 6.3, 5.30)   # tspT -> laterCost
 
-    ax.text(6, 0.15, "图: 单车 DP 求解器的两层结构,虚线表示约束注入,主流程沿实线",
-            ha="center", fontsize=9, fontstyle="italic", color="#4a5468")
+    arrow(ax, 8.2, 5.4, 7.2, 5.05, color=PALETTE["danger"][1], ls=":", curve=0.10)
+    arrow(ax, 8.2, 5.4, 4.6, 5.05, color=PALETTE["danger"][1], ls=":", curve=0.18)
+
+    arrow(ax, 6.3, 4.60, 5.5, 3.65, color=LINE, lw=1.2, curve=-0.10)  # laterCost -> G[mask]
+    arrow(ax, 3.7, 4.60, 4.5, 3.65, color=LINE, lw=1.2, curve=0.10)   # firstCost -> Total
+
+    arrow(ax, 4.0, 2.85, 4.0, 2.65,
+          color=PALETTE["primary"][1], lw=1.8, mutation=16)
+    arrow(ax, 6.8, 3.2, 8.3, 3.2,
+          color=PALETTE["secondary"][1], lw=1.8, mutation=16)
+
+    caption(ax, "图 3 — 单车 DP 求解器两层结构:内层 TSP DP 求单程代价,外层划分 DP 决定行程切分")
 
     fig.tight_layout()
-    fig.savefig(out_path, dpi=160, bbox_inches="tight", facecolor="white")
+    fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=BG, pad_inches=0.15)
     plt.close(fig)
-    print("saved", out_path)
+    print("saved", path)
 
 
 # ===================================================================
-# 图 4: 子集枚举对比 (标准 vs 分治)
+# 图 4: 子集枚举对比
 # ===================================================================
-def fig_subset_enum_comparison(out_path):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 6), dpi=160)
+def fig_subset_enum(path):
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 6.2), dpi=180)
+    fig.patch.set_facecolor(BG)
 
-    # 左:标准枚举 — mask={a,b,c} 的所有非空子集 7 个
+    # ============ 左:标准枚举 ============
     ax = axes[0]
     ax.set_xlim(0, 8); ax.set_ylim(0, 7); ax.set_aspect("equal"); ax.axis("off")
-    ax.set_title("(a) 标准枚举: 遍历 mask 的全部 $2^{|mask|}-1$ 个非空子集",
-                 fontsize=10.5, color="#1f2530", pad=10)
 
-    # 树根
-    styled_box(ax, 4, 6.2, 1.8, 0.65, "mask={a,b,c}", C_NODE_PRIMARY, C_NODE_PRIMARY_BD, fontsize=9, fontweight="bold")
-    # 7 个子集 Q,排成两行
-    subsets_std = ["{a,b,c}", "{a,b}", "{a,c}", "{b,c}", "{a}", "{b}", "{c}"]
-    xs = [1.0, 2.2, 3.4, 4.6, 5.8, 7.0, 4.0]
-    ys = [4.6, 4.6, 4.6, 4.6, 4.6, 4.6, 3.0]
-    for s, x, y in zip(subsets_std, xs, ys):
-        styled_box(ax, x, y, 1.05, 0.55, "Q="+s, C_NODE_ALGO, C_NODE_ALGO_BD, fontsize=8.2)
-        arrow(ax, 4, 5.85, x, y + 0.3, color="#7c8597", lw=0.9, mutation=8)
+    # 标题
+    ax.text(4, 6.6, "(a) 标准枚举", ha="center", fontsize=12, color=INK, fontweight="bold")
+    ax.text(4, 6.15, "遍历全部 $2^{|mask|}-1$ 个非空子集",
+            ha="center", fontsize=9.5, color=INK_MUTED, fontstyle="italic")
 
-    ax.text(4, 1.8, "枚举次数 = 7 (= $2^3 - 1$)", ha="center", fontsize=11,
-            color="#1f2530", fontweight="bold",
-            bbox=dict(facecolor="#fff5f0", edgecolor="#d6a948", boxstyle="round,pad=0.3"))
-    ax.text(4, 0.8, "每个非空子集都被显式枚举一次,无论 pivot 归属",
-            ha="center", fontsize=9, fontstyle="italic", color="#4a5468")
+    # mask 根节点
+    node(ax, 4, 5.4, 2.0, 0.6, "mask = {a, b, c}",
+         kind="primary", fontsize=10, weight="bold")
 
-    # 右:分治枚举 — 固定 pivot=a 必属 Q,仅枚举 4 个 Q
+    # 7 个子集
+    subsets = ["{a,b,c}", "{a,b}", "{a,c}", "{b,c}", "{a}", "{b}", "{c}"]
+    positions = [
+        (1.0, 3.8), (2.5, 3.8), (4.0, 3.8), (5.5, 3.8), (7.0, 3.8),
+        (2.5, 2.5), (5.5, 2.5),
+    ]
+    for s, (x, y) in zip(subsets, positions):
+        node(ax, x, y, 1.2, 0.55, f"Q = {s}", kind="accent", fontsize=8.5)
+        arrow(ax, 4.0, 5.10, x, y + 0.3, color=LINE, lw=0.7, mutation=8)
+
+    # 总数标注
+    box = FancyBboxPatch(
+        (2.5, 1.0), 3.0, 0.65,
+        boxstyle="round,pad=0.0,rounding_size=0.14",
+        facecolor=PALETTE["warn"][0], edgecolor=PALETTE["warn"][1], linewidth=1.4)
+    ax.add_patch(box)
+    ax.text(4, 1.33, "枚举次数 = 7 = $2^3 - 1$",
+            ha="center", va="center", fontsize=10.5, color=INK, fontweight="bold")
+
+    ax.text(4, 0.4, "无论 pivot 归属,每个非空子集都被显式枚举一次",
+            ha="center", fontsize=8.5, color=INK_MUTED, fontstyle="italic")
+
+    # ============ 右:分治枚举 ============
     ax = axes[1]
     ax.set_xlim(0, 8); ax.set_ylim(0, 7); ax.set_aspect("equal"); ax.axis("off")
-    ax.set_title("(b) 分治枚举: 固定 pivot=a 必属 $Q$,只枚举 $2^{|mask|-1}$ 个 $Q$",
-                 fontsize=10.5, color="#1f2530", pad=10)
 
-    styled_box(ax, 4, 6.2, 1.8, 0.65, "mask={a,b,c}", C_NODE_PRIMARY, C_NODE_PRIMARY_BD, fontsize=9, fontweight="bold")
-    # pivot 标注
-    ax.text(6.0, 6.2, "pivot = a", fontsize=9.5, color="#dc3c5a",
-            fontweight="bold", va="center")
+    ax.text(4, 6.6, "(b) 分治枚举", ha="center", fontsize=12, color=INK, fontweight="bold")
+    ax.text(4, 6.15, "固定 pivot 必属 $Q$,只枚举一半子集",
+            ha="center", fontsize=9.5, color=INK_MUTED, fontstyle="italic")
 
-    # 仅 4 个含 a 的子集
-    subsets_dc = ["{a}", "{a,b}", "{a,c}", "{a,b,c}"]
-    xs = [1.5, 3.3, 5.0, 6.8]
-    for s, x in zip(subsets_dc, xs):
-        styled_box(ax, x, 4.6, 1.2, 0.55, "Q="+s, C_NODE_ALGO, C_NODE_ALGO_BD, fontsize=8.2, fontweight="bold")
-        arrow(ax, 4, 5.85, x, 4.9, color="#dc3c5a", lw=1.2, mutation=10)
+    # mask 根节点 + pivot 标注
+    node(ax, 4, 5.4, 2.0, 0.6, "mask = {a, b, c}",
+         kind="primary", fontsize=10, weight="bold")
+    # pivot 高亮
+    ax.annotate("pivot = a", xy=(5.0, 5.4), xytext=(6.5, 5.7),
+                fontsize=9.5, color=PALETTE["danger"][1], fontweight="bold",
+                arrowprops=dict(arrowstyle="->", color=PALETTE["danger"][1], lw=1.2))
 
-    # 不枚举的子集(虚化显示)
-    ax.text(4, 3.5, "不在本层枚举的 Q (= 含 b/c 但不含 a 的子集):",
-            ha="center", fontsize=8.5, color="#888")
-    omitted = ["{b}", "{c}", "{b,c}"]
-    for s, x in zip(omitted, [2.5, 4.0, 5.5]):
-        styled_box(ax, x, 2.9, 1.0, 0.45, "Q="+s, "#f0f0f0", "#bbb", fontsize=8.0)
+    # 含 a 的 4 个子集 (本层枚举)
+    inc_a = ["{a}", "{a,b}", "{a,c}", "{a,b,c}"]
+    xs_a = [1.5, 3.3, 4.7, 6.5]
+    for s, x in zip(inc_a, xs_a):
+        node(ax, x, 4.0, 1.3, 0.55, f"Q = {s}", kind="accent", fontsize=8.5, weight="bold")
+        arrow(ax, 4.0, 5.10, x, 4.30,
+              color=PALETTE["danger"][1], lw=1.3, mutation=10)
 
-    # 解释箭头
-    ax.text(4, 2.0, "这些 Q 通过递归子问题 $G[mask⊕Q]$ 处理\n(其中 pivot=a 必属于该子问题)",
-            ha="center", fontsize=8.5, color="#4a5468", fontstyle="italic")
+    # 不在本层枚举的 (递归子问题处理)
+    excl_a = ["{b}", "{c}", "{b,c}"]
+    xs_e = [2.0, 4.0, 6.0]
+    for s, x in zip(excl_a, xs_e):
+        node(ax, x, 2.6, 1.1, 0.5, f"Q = {s}", kind="neutral", fontsize=8.2)
 
-    ax.text(4, 0.8, "枚举次数 = 4 (= $2^{3-1}$),减半",
-            ha="center", fontsize=11, color="#1f2530", fontweight="bold",
-            bbox=dict(facecolor="#f0fdf4", edgecolor="#82b366", boxstyle="round,pad=0.3"))
+    ax.text(4, 1.8,
+            "↑ 这些 Q 在递归子问题 $G[mask⊕Q]$ 中处理\n(因为 pivot 落入 $mask⊕Q$)",
+            ha="center", fontsize=8.5, color=INK_MUTED, fontstyle="italic")
 
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=160, bbox_inches="tight", facecolor="white")
+    # 总数标注
+    box = FancyBboxPatch(
+        (2.5, 0.6), 3.0, 0.65,
+        boxstyle="round,pad=0.0,rounding_size=0.14",
+        facecolor=PALETTE["accent"][0], edgecolor=PALETTE["accent"][1], linewidth=1.4)
+    ax.add_patch(box)
+    ax.text(4, 0.93, "枚举次数 = 4 = $2^{3-1}$",
+            ha="center", va="center", fontsize=10.5, color=INK, fontweight="bold")
+
+    fig.suptitle("图 4 — 子集枚举对比 (以 mask = {a, b, c} 为例)",
+                 fontsize=11, color=INK_MUTED, y=0.04, fontstyle="italic")
+
+    fig.tight_layout(rect=[0, 0.03, 1, 1])
+    fig.savefig(path, dpi=180, bbox_inches="tight", facecolor=BG, pad_inches=0.15)
     plt.close(fig)
-    print("saved", out_path)
+    print("saved", path)
 
 
 # ===================================================================
 def main():
-    fig_system_architecture(os.path.join(OUT, "diag_architecture.png"))
-    fig_algorithm_pipeline(os.path.join(OUT, "diag_pipeline.png"))
-    fig_dp_pipeline(os.path.join(OUT, "diag_dp_flow.png"))
-    fig_subset_enum_comparison(os.path.join(OUT, "diag_subset_enum.png"))
+    fig_architecture(os.path.join(OUT, "diag_architecture.png"))
+    fig_pipeline   (os.path.join(OUT, "diag_pipeline.png"))
+    fig_dp_flow    (os.path.join(OUT, "diag_dp_flow.png"))
+    fig_subset_enum(os.path.join(OUT, "diag_subset_enum.png"))
 
 
 if __name__ == "__main__":

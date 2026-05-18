@@ -29,7 +29,7 @@ class Animator:
         for vi, v in enumerate(solution.vehicles):
             if v and v[0].path:
                 r, c = v[0].path[0]
-                map_view.set_car_position(r, c, color=self.car_colors[vi % len(self.car_colors)])
+                map_view.set_car_position(r, c, color=self.car_colors[vi % len(self.car_colors)], car_id=vi)
 
     def start(self):
         # 启动每辆车的第一步
@@ -69,8 +69,7 @@ class Animator:
         anim.start()
 
     def _on_pos(self, vi, value: QPointF):
-        car = self.map_view._car_item if vi == 0 else None
-        # 多车时, 我们用单一 _car_item 不够 — 这里只针对单车做平滑, 多车退化为快速跳
+        car = self.map_view.car_item(vi) if hasattr(self.map_view, "car_item") else None
         if car is not None:
             car.setPos(value)
 

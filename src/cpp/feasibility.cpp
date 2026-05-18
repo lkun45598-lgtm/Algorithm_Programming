@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <numeric>
 #include <sstream>
+#include <set>
 
 namespace gc {
 
@@ -29,8 +30,29 @@ FeasibilityResult check_feasibility(const Grid& g, const KeyPoints& kp) {
         res.ok = false; res.reason = "至少需要一个收集点";
         return res;
     }
+    if (kp.parking == kp.plant) {
+        res.ok = false; res.reason = "停车场 S 与处理厂 T 不能重合";
+        return res;
+    }
+    std::set<Point> seen;
+    seen.insert(kp.parking);
+    seen.insert(kp.plant);
+    for (int i = 0; i < kp.N(); ++i) {
+        if (!seen.insert(kp.collects[i]).second) {
+            res.ok = false;
+            res.reason = "关键点坐标重复: P" + std::to_string(i);
+            return res;
+        }
+    }
 
     // (2) 重量约束
+    for (int i = 0; i < kp.N(); ++i) {
+        if (kp.weights[i] < 1 || kp.weights[i] > 3) {
+            res.ok = false;
+            res.reason = "收集点 P" + std::to_string(i) + " 的重量不在 1..3 范围内";
+            return res;
+        }
+    }
     int maxW = *std::max_element(kp.weights.begin(), kp.weights.end());
     int sumW = std::accumulate(kp.weights.begin(), kp.weights.end(), 0);
     if (kp.wMax < maxW) {

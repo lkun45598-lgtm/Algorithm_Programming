@@ -33,7 +33,8 @@ class MapView(QGraphicsView):
         self.plant = None
         self.points = []
         self.weights = []
-        self._car_item = None
+        self._car_item = None           # 兼容旧单车接口: car_id=0
+        self._car_items = {}            # car_id -> QGraphicsEllipseItem
         self._trip_overlays = []
         self.rebuild()
 
@@ -45,6 +46,7 @@ class MapView(QGraphicsView):
     def rebuild(self):
         self._scene.clear()
         self._car_item = None
+        self._car_items = {}
         self._trip_overlays = []
         # 网格背景
         for r in range(self.rows):
@@ -127,24 +129,38 @@ class MapView(QGraphicsView):
         for it in self._trip_overlays:
             self._scene.removeItem(it)
         self._trip_overlays = []
-        if self._car_item is not None:
-            self._scene.removeItem(self._car_item)
-            self._car_item = None
+        for it in list(getattr(self, "_car_items", {}).values()):
+            self._scene.removeItem(it)
+        self._car_items = {}
+        self._car_item = None
 
-    def set_car_position(self, r, c, color=None):
+    def _make_car_item(self, color):
+        item = QGraphicsEllipseItem(0, 0, CELL*0.55, CELL*0.55)
+        outline = QPen(QColor(40, 40, 40))
+        outline.setWidthF(1.6)
+        item.setPen(outline)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(12)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(0, 0, 0, 120))
+        item.setGraphicsEffect(shadow)
+        item.setZValue(10)
+        item.setBrush(QBrush(color))
+        self._scene.addItem(item)
+        return item
+
+    def set_car_position(self, r, c, color=None, car_id=0):
         if color is None:
             color = QColor(255, 180, 0)
-        if self._car_item is None:
-            self._car_item = QGraphicsEllipseItem(0, 0, CELL*0.55, CELL*0.55)
-            outline = QPen(QColor(40, 40, 40))
-            outline.setWidthF(1.6)
-            self._car_item.setPen(outline)
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(12)
-            shadow.setOffset(0, 2)
-            shadow.setColor(QColor(0, 0, 0, 120))
-            self._car_item.setGraphicsEffect(shadow)
-            self._car_item.setZValue(10)
-            self._scene.addItem(self._car_item)
-        self._car_item.setBrush(QBrush(color))
-        self._car_item.setPos(c*CELL + CELL*0.225, r*CELL + CELL*0.225)
+        if not hasattr(self, "_car_items"):
+            self._car_items = {}
+        if car_id not in self._car_items:
+            self._car_items[car_id] = self._make_car_item(color)
+            if car_id == 0:
+                self._car_item = self._car_items[car_id]
+        item = self._car_items[car_id]
+        item.setBrush(QBrush(color))
+        item.setPos(c*CELL + CELL*0.225, r*CELL + CELL*0.225)
+
+    def car_item(self, car_id=0):
+        return getattr(self, "_car_items", {}).get(car_id)

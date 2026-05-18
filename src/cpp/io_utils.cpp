@@ -17,6 +17,7 @@ void strip_cr(std::string& s) {
 bool parse_input(std::istream& in, ParsedInput& out, std::string& err) {
     auto& g = out.grid;
     if (!(in >> g.rows >> g.cols)) { err = "读取 M N 失败"; return false; }
+    if (g.rows <= 0 || g.cols <= 0) { err = "M N 必须为正整数"; return false; }
     in.ignore();    // 吃掉行末换行
     g.cells.assign(g.rows, std::string());
     for (int i = 0; i < g.rows; ++i) {
