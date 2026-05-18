@@ -155,10 +155,10 @@ def render_path_fig(sample_name, algo, out_path):
         print(f'  FAILED {sample_name}/{algo}: {sol.status} {sol.reason}')
         return
 
-    # 图尺寸随网格变化, 给图例留 ~2.2in 右边
-    fig_w = N * 0.5 + 2.6
-    fig_h = M * 0.5 + 1.2
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=150)
+    # 图尺寸随网格变化, 给图例留较宽的右侧空间, 保证字号大、可读性高
+    fig_w = N * 0.55 + 3.6
+    fig_h = M * 0.55 + 1.2
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=160)
     draw_grid(ax, M, N, cells, S, T, points, weights)
 
     legend_handles, legend_labels = [], []
@@ -169,33 +169,48 @@ def render_path_fig(sample_name, algo, out_path):
             color_idx += 1
             if not trip.path:
                 continue
-            # 把 trip.path 中重复经过的格子稍作偏移让线条不完全重合
             xs = [p[1] + 0.5 for p in trip.path]
             ys = [M - 1 - p[0] + 0.5 for p in trip.path]
             line, = ax.plot(
                 xs, ys,
-                color=color, linewidth=2.6, alpha=0.78,
+                color=color, linewidth=3.0, alpha=0.82,
                 solid_capstyle='round', solid_joinstyle='round',
             )
+            # 在起点和终点画小标记,便于辨方向
+            ax.plot(xs[0], ys[0], 'o', color=color, markersize=6, alpha=0.95,
+                    markeredgecolor='white', markeredgewidth=1.0)
+            ax.plot(xs[-1], ys[-1], 's', color=color, markersize=6, alpha=0.95,
+                    markeredgecolor='white', markeredgewidth=1.0)
             if len(sol.vehicles) > 1:
-                label = f'车{vi + 1}-行程{ti + 1} (载{trip.load} 距{trip.distance})'
+                label = f'车 {vi + 1} · 行程 {ti + 1}\n  载重 {trip.load}, 距离 {trip.distance}'
             else:
-                label = f'行程{ti + 1} (载{trip.load} 距{trip.distance})'
+                label = f'行程 {ti + 1}\n  载重 {trip.load}, 距离 {trip.distance}'
             legend_handles.append(line)
             legend_labels.append(label)
 
     if legend_handles:
-        ax.legend(
+        leg = ax.legend(
             legend_handles, legend_labels,
-            loc='upper left', bbox_to_anchor=(1.02, 1.0),
-            fontsize=8, frameon=False, handlelength=2.2,
+            loc='upper left', bbox_to_anchor=(1.04, 1.0),
+            fontsize=10.5,            # 加大字号
+            frameon=True,             # 加白底边框
+            facecolor='white',
+            edgecolor='#d0d4dc',
+            framealpha=0.95,
+            handlelength=2.6,
+            handletextpad=0.8,
+            labelspacing=0.9,         # 行间距加大
+            borderpad=0.8,
+            title='行程图例',
+            title_fontsize=10.5,
         )
+        leg.get_frame().set_linewidth(0.8)
 
     ax.set_title(
-        f'sample_{sample_name} / {algo}     '
+        f'sample_{sample_name}  /  {algo}     '
         f'总距离 = {sol.total_distance}     '
         f'运行 {sol.runtime_ms:.3f} ms',
-        fontsize=11, pad=10,
+        fontsize=12, pad=10, fontweight='bold',
     )
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches='tight', facecolor='white')
