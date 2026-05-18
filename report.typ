@@ -140,9 +140,15 @@
     text(weight: "bold")[题　　目], [基于多策略的城市垃圾收运路线规划],
     text(weight: "bold")[学　　院], [人工智能与低空技术学院],
     text(weight: "bold")[专　　业], [人工智能],
-    text(weight: "bold")[组　　员], [雷正 (202434610309)],
-    [], [蔡铭飞 (202434610301)],
-    [], [谢志伟 (202434610328)],
+    text(weight: "bold")[组　　员], grid(
+        columns: (auto, auto),
+        column-gutter: 8pt,
+        row-gutter: 4pt,
+        align: (left, left),
+        [雷　正], [(202434610309)],
+        [蔡铭飞], [(202434610301)],
+        [谢志伟], [(202434610328)],
+    ),
     text(weight: "bold")[指导教师], [胡洁],
     text(weight: "bold")[完成日期], [2026 年 5 月 15 日]
   )
