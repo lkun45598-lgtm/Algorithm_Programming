@@ -1,0 +1,11 @@
+# 暴力对拍 — 共 60 个种子, n ∈ [3, 5]
+# solver: D:\学习资料\大二下学习资料\算法设计与分析\Program Design\build\solver.exe
+
+
+# 汇总
+  PASS              : 658
+  MISMATCH          : 0
+  SKIP              : 62
+  FAIL_INFEASIBLE   : 0
+
+  所有测试通过 (暴力与 DP 输出完全一致).

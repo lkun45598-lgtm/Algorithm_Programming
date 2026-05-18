@@ -22,13 +22,26 @@ bool parse_input(std::istream& in, ParsedInput& out, std::string& err) {
     g.cells.assign(g.rows, std::string());
     for (int i = 0; i < g.rows; ++i) {
         std::string line;
-        if (!std::getline(in, line)) { err = "读取地图行失败"; return false; }
-        strip_cr(line);  // 去掉 CRLF 的 \r, 避免被当成可通行格
-        if (static_cast<int>(line.size()) < g.cols) line.resize(g.cols, '.');
-        // 把任何非 '.' '#' 字符标准化为 '.'
-        std::string row = line.substr(0, g.cols);
-        for (char& ch : row) if (ch != '#' && ch != '.') ch = '.';
-        g.cells[i] = row;
+        if (!std::getline(in, line)) {
+            err = "读取地图第 " + std::to_string(i) + " 行失败"; return false;
+        }
+        strip_cr(line);  // 去掉 CRLF 的 \r
+        // 严格校验: 长度必须等于 cols
+        if (static_cast<int>(line.size()) != g.cols) {
+            err = "地图第 " + std::to_string(i) + " 行长度 "
+                + std::to_string(line.size()) + " 不等于 cols=" + std::to_string(g.cols);
+            return false;
+        }
+        // 严格校验: 字符必须 ∈ {'.', '#'}
+        for (int j = 0; j < g.cols; ++j) {
+            char ch = line[(size_t)j];
+            if (ch != '.' && ch != '#') {
+                err = "地图第 " + std::to_string(i) + " 行第 " + std::to_string(j)
+                    + " 列出现非法字符 '" + std::string(1, ch) + "', 仅允许 '.' 或 '#'";
+                return false;
+            }
+        }
+        g.cells[i] = line;
     }
 
     auto& kp = out.kp;
