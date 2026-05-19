@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
         pf.addRow("W_max:", self.wmax_input)
         self.algo_combo = QComboBox()
         self.algo_combo.addItems(["dp", "dp_dc", "greedy", "multi_dp", "multi_greedy"])
+        self.algo_combo.currentTextChanged.connect(lambda _: self._refresh_map_header())
         pf.addRow("算法:", self.algo_combo)
         left.addWidget(paramsBox)
 
@@ -209,8 +210,28 @@ class MainWindow(QMainWindow):
         )
         right.addWidget(self.result_text, 1)
 
+        # ===== 中央: map 区, 顶部加标题栏 =====
+        center = QWidget()
+        center_lay = QVBoxLayout(center)
+        center_lay.setContentsMargins(0, 0, 0, 0)
+        center_lay.setSpacing(6)
+
+        self.map_header = QFrame()
+        self.map_header.setObjectName("mapHeader")
+        mh_lay = QHBoxLayout(self.map_header)
+        mh_lay.setContentsMargins(12, 6, 12, 6)
+        self.map_header_title = QLabel("网格视图")
+        self.map_header_title.setStyleSheet("font-weight:600; color:#2c3e50; font-size:10.5pt;")
+        self.map_header_subtitle = QLabel("等待编辑")
+        self.map_header_subtitle.setStyleSheet("color:#6c7689; font-size:9pt;")
+        mh_lay.addWidget(self.map_header_title)
+        mh_lay.addStretch(1)
+        mh_lay.addWidget(self.map_header_subtitle)
+        center_lay.addWidget(self.map_header)
+        center_lay.addWidget(self.map_view, 1)
+
         root.addLayout(left, 1)
-        root.addWidget(self.map_view, 3)
+        root.addWidget(center, 3)
         root.addLayout(right, 2)
         self.map_view.cellClicked.connect(self._on_cell_clicked)
 
@@ -249,6 +270,19 @@ class MainWindow(QMainWindow):
         self.map_view.points = list(self.state.points)
         self.map_view.weights = list(self.state.weights)
         self.map_view.rebuild()
+        self._refresh_map_header()
+
+    def _refresh_map_header(self):
+        st = self.state
+        algo = self.algo_combo.currentText() if hasattr(self, "algo_combo") else "-"
+        k = len(st.points)
+        s_tag = "✓" if st.parking is not None else "—"
+        t_tag = "✓" if st.plant   is not None else "—"
+        self.map_header_title.setText(f"网格视图 · {algo}")
+        self.map_header_subtitle.setText(
+            f"尺寸 {st.rows} × {st.cols}    "
+            f"S {s_tag}    T {t_tag}    收集点 {k}"
+        )
 
     def _clear_overlays(self):
         if self.animator:
@@ -509,6 +543,11 @@ QTextEdit {
     selection-background-color: #3b7ddd;
 }
 QFrame#liveBox {
+    background: #ffffff;
+    border: 1px solid #d8dce5;
+    border-radius: 8px;
+}
+QFrame#mapHeader {
     background: #ffffff;
     border: 1px solid #d8dce5;
     border-radius: 8px;

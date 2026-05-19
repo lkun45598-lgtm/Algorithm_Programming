@@ -1,13 +1,32 @@
-"""map_view.py —— QGraphicsView 网格地图视图"""
+"""map_view.py —— QGraphicsView 网格地图视图
+
+特性:
+- 网格外区域绘制淡点阵图案 (`_make_dot_pattern`), 替代纯灰平面
+- `resizeEvent` 触发自适应: 调 `fitInView` 让整张网格按当前窗口大小
+  保持长宽比缩放, 答辩投影/全屏均自适应; 场景坐标不变, 动画无需改动
+"""
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QPointF
-from PyQt6.QtGui import QBrush, QColor, QFont, QPen, QPainter, QPainterPath
+from PyQt6.QtGui import QBrush, QColor, QFont, QPen, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
     QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
     QGraphicsSimpleTextItem, QGraphicsEllipseItem, QGraphicsPathItem,
     QGraphicsDropShadowEffect,
 )
 
-CELL = 36     # 每格像素数
+CELL = 36     # 每格像素数 (场景坐标; 视图层会按窗口缩放)
+
+
+def _make_dot_pattern() -> QBrush:
+    """24×24 平铺的淡点阵图案, 在 map 外灰色区呈现细密点。"""
+    pix = QPixmap(24, 24)
+    pix.fill(QColor("#eef1f5"))
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setBrush(QBrush(QColor("#cdd3dd")))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawEllipse(10, 10, 4, 4)
+    p.end()
+    return QBrush(pix)
 
 
 class MapView(QGraphicsView):
@@ -25,7 +44,12 @@ class MapView(QGraphicsView):
             | QPainter.RenderHint.SmoothPixmapTransform
             | QPainter.RenderHint.TextAntialiasing
         )
-        self.setBackgroundBrush(QBrush(QColor("#f5f6fa")))
+        # 关键: 让背景图案在视口坐标里平铺 (不随场景缩放变形)
+        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
+        self.setBackgroundBrush(_make_dot_pattern())
+        self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.rows = 10
         self.cols = 10
         self.cells = [["." for _ in range(self.cols)] for _ in range(self.rows)]
@@ -37,6 +61,14 @@ class MapView(QGraphicsView):
         self._car_items = {}            # car_id -> QGraphicsEllipseItem
         self._trip_overlays = []
         self.rebuild()
+
+    # ---- 视口背景在视口坐标下绘制, 不随场景缩放 ----
+    def drawBackground(self, painter: QPainter, rect: QRectF):
+        painter.save()
+        painter.resetTransform()
+        vp = self.viewport().rect()
+        painter.fillRect(vp, self.backgroundBrush())
+        painter.restore()
 
     def set_map(self, rows, cols, cells):
         self.rows, self.cols = rows, cols
@@ -66,7 +98,30 @@ class MapView(QGraphicsView):
         for i, (p, w) in enumerate(zip(self.points, self.weights)):
             self._paint_marker(p, QColor(60, 90, 200), f"{i}:{w}")
 
+        # 给网格加一个浅边框 (让"卡片"感更明显)
+        border = QGraphicsRectItem(0, 0, self.cols * CELL, self.rows * CELL)
+        border.setPen(QPen(QColor("#b8c0cc"), 1.4))
+        border.setBrush(QBrush(Qt.GlobalColor.transparent))
+        border.setZValue(10)
+        self._scene.addItem(border)
+
         self._scene.setSceneRect(QRectF(0, 0, self.cols * CELL, self.rows * CELL))
+        self._fit_to_view()
+
+    # ---- 自适应缩放 ----
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_to_view()
+
+    def _fit_to_view(self):
+        r = self._scene.sceneRect()
+        if r.isEmpty():
+            return
+        # 留 1.5 格的视觉边距, 让网格不顶到边
+        margin = CELL * 1.5
+        target = QRectF(r.x() - margin, r.y() - margin,
+                        r.width() + 2 * margin, r.height() + 2 * margin)
+        self.fitInView(target, Qt.AspectRatioMode.KeepAspectRatio)
 
     def _paint_marker(self, p, color, label):
         r, c = p
