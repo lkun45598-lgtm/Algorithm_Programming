@@ -99,9 +99,18 @@ class MainWindow(QMainWindow):
 
         # 右结果面板
         right = QVBoxLayout()
+        # 实时状态: 动画过程中按格刷新
+        self.live_status_box = QGroupBox("实时状态")
+        self.live_status_layout = QVBoxLayout(self.live_status_box)
+        self.live_status_labels = []   # type: list[QLabel]  # 每辆车一行
+        self.live_status_idle = QLabel("(尚未运行)")
+        self.live_status_idle.setStyleSheet("color:#888; padding:4px;")
+        self.live_status_layout.addWidget(self.live_status_idle)
+        right.addWidget(self.live_status_box)
+        # 行程详情 (动画前一次性写入)
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
-        right.addWidget(QLabel("结果"))
+        right.addWidget(QLabel("行程详情"))
         right.addWidget(self.result_text)
 
         root.addLayout(left, 1)
@@ -215,10 +224,52 @@ class MainWindow(QMainWindow):
                     f"  Trip {ti + 1}: 载重={t.load}, 距离={t.distance}, 点={t.point_indices}"
                 )
         self.result_text.setPlainText("\n".join(lines))
+        # 重建实时状态行 (每辆车一行)
+        self._rebuild_live_status(len(sol.vehicles))
         # 启动动画
         self._clear_overlays()
-        self.animator = Animator(self.map_view, sol, TRIP_COLORS)
+        self.animator = Animator(
+            self.map_view, sol, TRIP_COLORS,
+            status_callback=self._on_animation_status,
+        )
         self.animator.start()
+
+    def _rebuild_live_status(self, n_vehicles: int):
+        # 清掉旧的行 (idle 占位 + 之前的标签)
+        while self.live_status_layout.count():
+            it = self.live_status_layout.takeAt(0)
+            w = it.widget()
+            if w is not None:
+                w.deleteLater()
+        self.live_status_labels = []
+        for vi in range(n_vehicles):
+            lbl = QLabel(f"车 {vi + 1} — 等待启动")
+            lbl.setStyleSheet(
+                "padding:6px 8px; border-radius:4px; "
+                "background:#eef3fb; color:#2c3e50; font-family:Consolas,monospace;"
+            )
+            self.live_status_layout.addWidget(lbl)
+            self.live_status_labels.append(lbl)
+
+    def _on_animation_status(self, vi: int, info: dict):
+        if vi >= len(self.live_status_labels):
+            return
+        lbl = self.live_status_labels[vi]
+        if info.get('done'):
+            lbl.setText(
+                f"车 {vi + 1} — 全部完成   "
+                f"Trip {info['num_trips']}/{info['num_trips']}, "
+                f"载重 0, 已行驶 {info['distance']}"
+            )
+            lbl.setStyleSheet(
+                "padding:6px 8px; border-radius:4px; "
+                "background:#e6f6ea; color:#1f7a3a; font-family:Consolas,monospace;"
+            )
+            return
+        lbl.setText(
+            f"车 {vi + 1} — Trip {info['trip_idx']}/{info['num_trips']}, "
+            f"载重 {info['load']}, 已行驶 {info['distance']}"
+        )
 
 
 def main():
