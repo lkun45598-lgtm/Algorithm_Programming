@@ -222,7 +222,7 @@ $ cal(T)^* = arg min_(cal(T) "可行") sum_(i=1)^m "cost"(tau_i). $
 @fig:schematic 展示了一个 $6 times 6$ 网格上的示意实例。
 
 #figure(
-  image("docs/figures/problem_schematic.png", width: 50%),
+  image("docs/figures/problem_schematic.png", width: 65%),
   caption: [实例示意:$6 times 6$ 网格上 $S$, $T$ 与 3 个带重量收集点。深灰色单元为障碍。],
 ) <fig:schematic>
 
@@ -232,7 +232,7 @@ $ cal(T)^* = arg min_(cal(T) "可行") sum_(i=1)^m "cost"(tau_i). $
 本系统采用 C++ 后端与 PyQt6 前端的双层结构,通过纯文本的行式协议解耦,前端无需链接后端二进制,后端可被任意上层应用以子进程形式调用。@fig:arch 给出整体模块组织。
 
 #figure(
-  image("docs/figures/diag_architecture.png", width: 100%),
+  image("docs/figures/diag_architecture.png", width: 88%),
   caption: [系统两层架构:前端模块 (上)、行式文本协议层 (中)、后端模块 (下)。],
 ) <fig:arch>
 
@@ -241,7 +241,7 @@ $ cal(T)^* = arg min_(cal(T) "可行") sum_(i=1)^m "cost"(tau_i). $
 @fig:pipeline 进一步展示了从输入到输出的端到端数据流。
 
 #figure(
-  image("docs/figures/diag_pipeline.png", width: 100%),
+  image("docs/figures/diag_pipeline.png", width: 92%),
   caption: [算法端到端 pipeline:实线为主流程,算法分派由输入文件的 `ALGO` 字段决定。],
 ) <fig:pipeline>
 
@@ -346,7 +346,7 @@ loop:
 @fig:enum 直观对比标准枚举与分治枚举的差异。
 
 #figure(
-  image("docs/figures/diag_subset_enum.png", width: 100%),
+  image("docs/figures/diag_subset_enum.png", width: 88%),
   caption: [子集枚举对比 (以 $"mask" = {a, b, c}$ 为例)。(a) 标准枚举遍历全部 $2^3 - 1 = 7$ 个非空子集;(b) 分治枚举固定 $"pivot" = a$,仅枚举 $4$ 个包含 $a$ 的子集,其余子集由递归子问题处理。],
 ) <fig:enum>
 
