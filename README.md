@@ -28,7 +28,8 @@ Program Design/
 ├── data/                         # 测试样例
 │   ├── sample_small.txt          # 8×8, 4 收集点
 │   ├── sample_medium.txt         # 12×12, 6 收集点
-│   └── sample_large.txt          # 15×15, 8 收集点
+│   ├── sample_large.txt          # 15×15, 8 收集点
+│   └── sample_library/           # 分类样例库 (10 类, 20 用例, 见其内 README)
 ├── build/
 │   └── solver.exe                # 编译产物
 ├── build.bat                     # 编译脚本
@@ -66,6 +67,9 @@ g++ -std=c++17 -O2 -Wall -Wextra \
 ./build/solver.exe data/sample_small.txt
 ./build/solver.exe data/sample_medium.txt
 ./build/solver.exe data/sample_large.txt
+
+# JSON 输出 (与 Web 前端/外部工具对接时使用; PyQt 仍走默认行式协议)
+./build/solver.exe data/sample_small.txt --json
 ```
 
 切换算法只需修改输入文件最后一行的 `ALGO` 字段。可选值:
@@ -115,6 +119,8 @@ ALGO <algo>          # 算法标识 (见上表)
 
 ## 输出协议
 
+默认为行式文本协议:
+
 ```
 STATUS ok | error | infeasible
 [REASON ...]                    # 仅在 status != ok 时出现
@@ -129,6 +135,25 @@ PATH <r1>,<c1> <r2>,<c2> ...
 ...
 END
 ```
+
+加 `--json` 后改用结构化 JSON, schema 示例:
+
+```json
+{
+  "status": "ok",
+  "algorithm": "dp",
+  "total_distance": 34,
+  "runtime_ms": 0.011,
+  "vehicles": [
+    { "id": 1, "trips": [
+        { "load": 3, "distance": 14, "point_indices": [0, 1],
+          "path": [[0,0], [1,0], ...] }
+    ]}
+  ]
+}
+```
+
+错误/不可行情形 JSON 输出 `{"status": "error"|"infeasible", "error": "..."}`。
 
 ## 实现的加分项
 

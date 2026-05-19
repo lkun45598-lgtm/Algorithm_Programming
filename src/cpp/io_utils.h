@@ -21,4 +21,9 @@ bool parse_input(std::istream& in, ParsedInput& out, std::string& error);
 
 void emit_solution(std::ostream& out, const Solution& sol);
 
+// JSON 输出 (与行式文本并行可用, 不替换). 字段:
+//   status / algorithm / total_distance / runtime_ms / error
+//   vehicles[]: { id, trips[]: { load, distance, point_indices[], path[][r,c] } }
+void emit_solution_json(std::ostream& out, const Solution& sol);
+
 } // namespace gc
