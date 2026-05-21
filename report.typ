@@ -754,3 +754,216 @@ run_gui.bat
 # 或
 python src/gui/main.py
 ```
+
+= 附录 D:关键算法代码
+
+本附录摘录本系统中最具代表性的 7 段 C++ 实现, 与正文§4 算法设计逐一对应。所有源码均位于 `src/cpp/`, 完整版可在公开仓库浏览。
+
+== BFS 单源最短路 + 前驱表
+
+`bfsWithPrev` 在一次广度优先搜索中同时写入距离场 $"dist"$ 与前驱场 $"prev"$, 后者用于 $O(L)$ 路径回溯, 是距离矩阵 $O(K dot M L)$ 复杂度的基础 (引自 `src/cpp/grid.cpp`)。
+
+```cpp
+void Grid::bfsWithPrev(const Point& from,
+                       std::vector<std::vector<int>>& dist,
+                       std::vector<std::vector<Point>>& prev) const {
+    dist.assign(rows, std::vector<int>(cols, -1));
+    prev.assign(rows, std::vector<Point>(cols, {-1, -1}));
+    if (!walkable(from)) return;
+    dist[from.r][from.c] = 0;
+    std::queue<Point> q; q.push(from);
+    while (!q.empty()) {
+        Point cur = q.front(); q.pop();
+        int d = dist[cur.r][cur.c];
+        for (int k = 0; k < 4; ++k) {
+            int nr = cur.r + dR[k], nc = cur.c + dC[k];
+            if (!walkable(nr, nc) || dist[nr][nc] != -1) continue;
+            dist[nr][nc] = d + 1;
+            prev[nr][nc] = cur;
+            q.push({nr, nc});
+        }
+    }
+}
+```
+
+== 关键点距离矩阵 (每源点单次 BFS)
+
+每个源点只 BFS 一次, 同一次的 prev 表被用来 $O(|"path"|)$ 回溯到所有目标点的路径, 把 $O(K^2 dot M L)$ 的朴素实现压到 $O(K dot M L)$ (引自 `src/cpp/solver_common.cpp`)。
+
+```cpp
+DistanceMatrix build_distance_matrix(const Grid& g, const KeyPoints& kp) {
+    DistanceMatrix dm; int N = kp.N(); dm.K = N + 2;
+    std::vector<Point> idxToPoint(dm.K);
+    idxToPoint[IDX_S] = kp.parking;
+    idxToPoint[IDX_T] = kp.plant;
+    for (int i = 0; i < N; ++i) idxToPoint[IDX_P(i)] = kp.collects[i];
+    dm.dist.assign(dm.K, std::vector<int>(dm.K, -1));
+    dm.path.assign(dm.K, std::vector<std::vector<Point>>(dm.K));
+    std::vector<std::vector<int>>   dist_field;
+    std::vector<std::vector<Point>> prev_field;
+    for (int u = 0; u < dm.K; ++u) {
+        g.bfsWithPrev(idxToPoint[u], dist_field, prev_field);
+        for (int v = 0; v < dm.K; ++v) {
+            const Point& pv = idxToPoint[v];
+            dm.dist[u][v] = dist_field[pv.r][pv.c];
+            if (u == v)               dm.path[u][v] = { idxToPoint[u] };
+            else if (dm.dist[u][v] >= 0)
+                dm.path[u][v] = g.reconstructPath(idxToPoint[u], pv, prev_field);
+        }
+    }
+    return dm;
+}
+```
+
+== 子集旅行商动态规划
+
+$"tsp"["mask"][i]$ 定义为"从指定 depot 出发, 访问 $"mask"$ 中所有点, 以 $i$ 结尾的最小代价"。该表对单车求解和双车求解的内层都被复用 (引自 `src/cpp/dp.cpp`)。
+
+```cpp
+void tsp_from_depot(const DistanceMatrix& dm, int N, int depotIdx,
+                    std::vector<std::vector<int>>& tsp) {
+    int full = 1 << N;
+    tsp.assign(full, std::vector<int>(N, INF));
+    for (int i = 0; i < N; ++i) {
+        int d = dm.dist[depotIdx][IDX_P(i)];
+        if (d >= 0) tsp[1 << i][i] = d;
+    }
+    for (int mask = 1; mask < full; ++mask) {
+        for (int last = 0; last < N; ++last) {
+            if (!(mask & (1 << last)) || tsp[mask][last] >= INF) continue;
+            int curCost = tsp[mask][last];
+            for (int nxt = 0; nxt < N; ++nxt) {
+                if (mask & (1 << nxt)) continue;
+                int e = dm.dist[IDX_P(last)][IDX_P(nxt)];
+                if (e < 0) continue;
+                int cand = curCost + e;
+                int newMask = mask | (1 << nxt);
+                if (cand < tsp[newMask][nxt]) tsp[newMask][nxt] = cand;
+            }
+        }
+    }
+}
+```
+
+== 划分 DP 的两种子集枚举
+
+外层 $G["mask"]$ 把 $"mask"$ 切成若干 later-trip 子集; 标准枚举遍历 $"mask"$ 全部非空子集 $Q$, pivot 枚举仅遍历 $"mask"$ 中包含最低位元素的子集 (规模 $2^(|"mask"|-1)$, 见§4.4 与定理 1) (引自 `src/cpp/dp.cpp`)。
+
+```cpp
+for (int mask = 1; mask < full; ++mask) {
+    if (mode == DpMode::Standard) {
+        // 标准枚举: 遍历 mask 全部非空子集 Q
+        for (int Q = mask; Q > 0; Q = (Q - 1) & mask) {
+            if (ctx.laterCost[Q] >= INF) continue;
+            int rest = mask ^ Q;
+            if (ctx.G[rest] >= INF) continue;
+            int cand = ctx.laterCost[Q] + ctx.G[rest];
+            if (cand < ctx.G[mask]) {
+                ctx.G[mask] = cand;
+                ctx.pickG[mask] = Q;
+            }
+        }
+    } else {
+        // pivot 规范化枚举: 固定 pivot = mask 最低位, 仅遍历含 pivot 的 Q
+        int pivot = mask & -mask;
+        int rest_of_mask = mask ^ pivot;
+        int R = rest_of_mask;
+        while (true) {
+            int Q = pivot | R;
+            if (ctx.laterCost[Q] < INF) {
+                int leftover = mask ^ Q;
+                if (ctx.G[leftover] < INF) {
+                    int cand = ctx.laterCost[Q] + ctx.G[leftover];
+                    if (cand < ctx.G[mask]) {
+                        ctx.G[mask] = cand;
+                        ctx.pickG[mask] = Q;
+                    }
+                }
+            }
+            if (R == 0) break;
+            R = (R - 1) & rest_of_mask;
+        }
+    }
+}
+```
+
+== `singleCost[mask]` 表的一次性求解
+
+对全集 $[n]$ 的所有子集 $"mask"$ 同时求出"从 $S$ 出发收完 $"mask"$ 的单车最优代价"。该表是把双车 DP 从重建子距离矩阵 + 重跑子 DP 的 $O(2^n dot "(子单车DP)")$ 压到 $O(3^n)$ 的关键中间产物 (引自 `src/cpp/dp.cpp`)。
+
+```cpp
+ctx.singleCost.assign(full, INF);
+ctx.bestQ1.assign(full, 0);
+ctx.singleCost[0] = 0;
+for (int mask = 1; mask < full; ++mask) {
+    for (int Q = mask; Q > 0; Q = (Q - 1) & mask) {
+        if (ctx.firstCost[Q] >= INF) continue;
+        int leftover = mask ^ Q;
+        if (ctx.G[leftover] >= INF) continue;
+        int cand = ctx.firstCost[Q] + ctx.G[leftover];
+        if (cand < ctx.singleCost[mask]) {
+            ctx.singleCost[mask] = cand;
+            ctx.bestQ1[mask] = Q;
+        }
+    }
+}
+```
+
+== 双车 DP + 对称性消除
+
+双车答案归约为 $min_(A subset.eq [n]) "singleCost"[A] + "singleCost"[[n] \\ A]$。强制 $0 in A$ 把无序划分的二重枚举减半, $A = 0$ 单独作为退化情形处理 (引自 `src/cpp/dual.cpp`)。
+
+```cpp
+DpContext ctx = compute_dp_context(kp, dm, DpMode::Standard);
+int bestTotal = INF_HALF, bestM1 = -1;
+// 候选 1: 一辆车不出动 (退化为单车情况)
+if (ctx.singleCost[full] < INF_HALF) {
+    bestTotal = ctx.singleCost[full];
+    bestM1 = 0;
+}
+// 候选 2: 强制点 0 ∈ mask1, 每个无序划分恰被枚举一次
+if (N > 0) {
+    for (int mask1 = 1; mask1 <= full; ++mask1) {
+        if (!(mask1 & 1)) continue;
+        int mask2 = full ^ mask1;
+        int c1 = ctx.singleCost[mask1], c2 = ctx.singleCost[mask2];
+        if (c1 >= INF_HALF || c2 >= INF_HALF) continue;
+        int total = c1 + c2;
+        if (total < bestTotal) { bestTotal = total; bestM1 = mask1; }
+    }
+}
+```
+
+== 最近邻贪心
+
+作为对照基线, 每步从当前位置选择满足载重约束且 BFS 距离最近的未访问点; 若无可装载点则回 $T$ 卸货并开启新行程 (引自 `src/cpp/greedy.cpp`)。
+
+```cpp
+while (remaining > 0) {
+    int best = -1, bestD = std::numeric_limits<int>::max();
+    for (int i = 0; i < N; ++i) {
+        if (visited[i]) continue;
+        if (load + kp.weights[i] > kp.wMax) continue;
+        int d = dm.dist[curIdx][IDX_P(i)];
+        if (d < 0) continue;
+        if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best < 0) {
+        // 当前 trip 收不下任何点 → 回 T 卸货, 新 trip 从 T 开始
+        keySeq.push_back(IDX_T);
+        cur.fullPath = expand_trip_path(dm, keySeq);
+        cur.distance = (int)cur.fullPath.size() - 1;
+        cur.load = load; sol.trips.push_back(cur);
+        totalDist += cur.distance;
+        cur = Trip{}; load = 0;
+        curIdx = IDX_T; keySeq.clear(); keySeq.push_back(curIdx);
+        continue;
+    }
+    visited[best] = true;
+    load += kp.weights[best];
+    curIdx = IDX_P(best);
+    keySeq.push_back(curIdx);
+    cur.pointIndices.push_back(best);
+    --remaining;
+}
+```
