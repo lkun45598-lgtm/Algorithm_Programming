@@ -21,21 +21,29 @@ Program Design/
 │   │   └── main.cpp              # CLI 入口
 │   └── gui/                      # PyQt6 GUI
 │       ├── controller.py         # 调用 solver.exe 并解析输出
-│       ├── map_view.py           # QGraphicsView 网格可视化
+│       ├── map_view.py           # QGraphicsView 网格可视化 + 自适应缩放
 │       ├── editor.py             # 编辑状态管理
-│       ├── animator.py           # QTimer 车辆动画
-│       └── main.py               # 主窗口
+│       ├── animator.py           # QVariantAnimation 补间动画 (InOutQuad)
+│       └── main.py               # 主窗口 (KPI 卡片 / 状态徽章 / 实时状态)
 ├── data/                         # 测试样例
 │   ├── sample_small.txt          # 8×8, 4 收集点
 │   ├── sample_medium.txt         # 12×12, 6 收集点
 │   ├── sample_large.txt          # 15×15, 8 收集点
 │   └── sample_library/           # 分类样例库 (10 类, 20 用例, 见其内 README)
+├── tests/                        # 自动化测试与基准
+│   ├── brute_force_checker.py    # n!×2^(n-1) 暴力对拍 (720 例, 0 mismatch)
+│   ├── dense_benchmark.py        # n∈[3,8]×ρ×种子 密集基准 (1940 数据点)
+│   ├── verify_sample_library.py  # 样例库分类自检 (20/20 PASS)
+│   ├── random_case_generator.py  # 随机实例生成器 (seed→实例)
+│   └── seeds.txt                 # 60 个固定素数种子
+├── docs/figures/                 # 报告图: 流程图 / 性能图 / 路径可视化
 ├── build/
 │   └── solver.exe                # 编译产物
 ├── build.bat                     # 编译脚本
 ├── run_gui.bat                   # 启动 GUI
 ├── README.md                     # 本文件
-└── report.md                     # 课程设计报告
+├── report.typ                    # 课程设计报告源文件 (Typst)
+└── report.pdf                    # 课程设计报告 (36 页, 编译产物)
 ```
 
 ## 依赖环境
@@ -96,12 +104,17 @@ python src/gui/main.py
 ```
 
 GUI 用法:
-1. 左侧"编辑模式"选择障碍/S/T/收集点
-2. 在中间网格点击放置元素(右键擦除)
-3. 设置 W_max 和算法
-4. 点 "运行求解 + 动画" 即可看到车辆按规划路径移动
+1. 左侧"编辑模式"选择障碍 / S / T / 收集点 (每种带色块图标)
+2. 在中间网格点击放置元素 (右键擦除)
+3. 设置 W_max 与算法
+4. 点 "运行求解 + 动画":
+   - 右上 4 张 KPI 卡片定格 *总距离 / 耗时 / 车辆数 / 总行程*
+   - 状态徽章变 *运行中*, 小车沿规划路径滑动
+   - "实时状态"面板每移动一格刷新 *当前 trip / 载重 / 已行驶距离*
+   - 完成时徽章变 *完成*, 行背景变绿
+5. "行程详情"区域列出每辆车每条 trip 的载重 / 距离 / 访问点序列
 
-也可点 "载入样例文件" 直接读取 `data/` 下的 `.txt`,或 "随机生成示例" 一键创建。
+也可点 "载入样例文件" 直接读取 `data/` 下的 `.txt`, 或 "随机生成示例" 一键创建。
 
 ## 输入文件格式
 
@@ -157,10 +170,26 @@ END
 
 ## 实现的加分项
 
-| 加分项 | 实现位置 |
-|--------|----------|
-| (1) 双车协同 | `src/cpp/dual.{h,cpp}` + 算法 `multi_dp`/`multi_greedy` |
-| (2) 图形化界面 + 动画 | `src/gui/` 整个目录,QTimer 步进绘制车辆轨迹 |
-| (3) 分治法优化子集枚举 | `src/cpp/dp.cpp` 中 `DpMode::DivideConquer` |
+| 加分项 | 实现位置 | 关键特性 |
+|--------|----------|----------|
+| (1) 双车协同 | `src/cpp/dual.{h,cpp}` + 算法 `multi_dp`/`multi_greedy` | `singleCost[mask]` 表复用 + 对称性消除, 460× 加速 |
+| (2) 图形化界面 + 动画 | `src/gui/` 整个目录 | KPI 卡片 / 状态徽章 / 实时载重 + 已行驶距离 / 多色路径 / 自适应缩放 |
+| (3) 分治法子集枚举 | `src/cpp/dp.cpp` 中 `DpMode::DivideConquer` | pivot 规范化, 候选规模 $2^k - 1$ → $2^{k-1}$ |
 
-详细原理见 `report.md`。
+## 测试
+
+```bash
+# 暴力对拍 (黄金标准, 验证 dp / dp_dc 与 n!×2^(n-1) 暴力解一致)
+python tests/brute_force_checker.py tests/seeds.txt 5
+# → 输出: PASS 658, MISMATCH 0, SKIP 62
+
+# 样例库自检 (20 用例 × 3 类预期状态)
+python tests/verify_sample_library.py
+# → 输出: 20/20 PASS
+
+# 密集基准 (n=3..8 × ρ × 种子, 生成 4 张性能图)
+python tests/dense_benchmark.py 20 5
+# → 输出 1940 数据点 + docs/figures/bench_*.png
+```
+
+详细原理与实验结果见 `report.pdf` (36 页, Typst 排版)。
